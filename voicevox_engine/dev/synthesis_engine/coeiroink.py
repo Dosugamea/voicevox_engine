@@ -44,6 +44,7 @@ class EspnetModel:
 
         with open(settings.acoustic_model_config_path) as f:
             config = yaml.safe_load(f)
+        self.g2p_type : str = config["g2p"]
         self.token_id_converter = TokenIDConverter(
             token_list=config["token_list"],
             unk_symbol="<unk>",
@@ -125,7 +126,6 @@ class MockSynthesisEngine(SynthesisEngineBase):
 
     def _synthesis_impl(self, query: AudioQuery, speaker_id: int, text: str) -> np.ndarray:
         start_time = time.time()
-        tokens = self.query2tokens_prosody(query, text)
 
         if self.previous_speaker_id != speaker_id or self.previous_speed_scale != query.speedScale:
             self.current_speaker_models = None
@@ -134,6 +134,18 @@ class MockSynthesisEngine(SynthesisEngineBase):
                                                                           speed_scale=1/query.speedScale)
             self.previous_speaker_id = speaker_id
             self.previous_speed_scale = query.speedScale
+
+        if self.current_speaker_models.g2p_type in [
+            "pyopenjtalk_accent",
+            "pyopenjtalk_accent_with_pause"
+        ]:
+            tokens = self.query2tokens_accent(
+                query,
+                self.current_speaker_models.g2p_type == "pyopenjtalk_accent_with_pause",
+            )
+        else:
+            tokens = self.query2tokens_prosody(query, text)
+
         wave = self.current_speaker_models.make_voice(tokens)
 
         # trim
@@ -175,6 +187,32 @@ class MockSynthesisEngine(SynthesisEngineBase):
         rtf = (time.time() - start_time)
         print(f"Synthesis Time: {rtf}")
         return wave
+
+    @staticmethod
+    def query2tokens_accent(query: AudioQuery, with_pause: bool = False):
+        tokens = []
+        for accent_phrase in query.accent_phrases:
+            accent = accent_phrase.accent
+            accent_str = str(accent)
+            for i, mora in enumerate(accent_phrase.moras):
+                accent_calc_str = str((i + 1) - accent)
+                if mora.consonant is not None:
+                    tokens += [
+                        mora.consonant,
+                        accent_str,
+                        accent_calc_str
+                    ]
+                tokens += [
+                    mora.vowel,
+                    accent_str,
+                    accent_calc_str
+                ]
+            if (
+                accent_phrase.pause_mora is not None
+                and with_pause
+            ):
+                tokens += [accent_phrase.pause_mora.vowel]
+        return tokens
 
     @staticmethod
     def query2tokens_prosody(query: AudioQuery, text: str):
