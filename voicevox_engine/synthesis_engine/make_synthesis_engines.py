@@ -95,7 +95,9 @@ def make_synthesis_engines(
 
     if "0.0.0" not in synthesis_engines:
         synthesis_engines["0.0.0"] = MockSynthesisEngine(
-            speakers=mock_metas(), supported_devices=mock_supported_devices()
+            speakers=mock_metas(),
+            supported_devices=mock_supported_devices(),
+            use_gpu=use_gpu,
         )
 
     return synthesis_engines

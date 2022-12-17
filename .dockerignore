@@ -1,0 +1,6 @@
+.venv
+.github
+.venv
+.mypy_cache
+docs
+test

@@ -29,7 +29,7 @@ class EspnetSettings(NamedTuple):
 
 class EspnetModel:
     def __init__(self, settings: EspnetSettings, use_gpu=False, speed_scale=1.0):
-        self.device = 'cuda' if use_gpu else 'cpu'
+        self.device = "cuda" if use_gpu else "cpu"
         self.tts_model = Text2Speech(
             settings.acoustic_model_config_path,
             settings.acoustic_model_path,
@@ -44,7 +44,7 @@ class EspnetModel:
 
         with open(settings.acoustic_model_config_path) as f:
             config = yaml.safe_load(f)
-        self.g2p_type : str = config["g2p"]
+        self.g2p_type: str = config["g2p"]
         self.token_id_converter = TokenIDConverter(
             token_list=config["token_list"],
             unk_symbol="<unk>",
@@ -60,7 +60,9 @@ class EspnetModel:
         return wave
 
     @classmethod
-    def get_espnet_model(cls, acoustic_model_path, acoustic_model_config_path, use_gpu, speed_scale=1.0):
+    def get_espnet_model(
+        cls, acoustic_model_path, acoustic_model_config_path, use_gpu, speed_scale=1.0
+    ):
         settings = EspnetSettings(
             acoustic_model_config_path=acoustic_model_config_path,
             acoustic_model_path=acoustic_model_path,
@@ -72,41 +74,42 @@ class EspnetModel:
         uuid = None
         metas = get_metas_dict()
         for meta in metas:
-            for style in meta['styles']:
-                if speaker_id == style['id']:
-                    uuid = meta['speaker_uuid']
+            for style in meta["styles"]:
+                if speaker_id == style["id"]:
+                    uuid = meta["speaker_uuid"]
         if uuid is None:
             raise Exception("Not Found Speaker Directory")
 
         acoustic_model_folder_path = f"./speaker_info/{uuid}/model/{speaker_id}"
-        model_files = sorted(glob.glob(acoustic_model_folder_path + '/*.pth'))
+        model_files = sorted(glob.glob(acoustic_model_folder_path + "/*.pth"))
 
         return cls.get_espnet_model(
             acoustic_model_path=model_files[0],
             acoustic_model_config_path=f"{acoustic_model_folder_path}/config.yaml",
             use_gpu=use_gpu,
-            speed_scale=speed_scale
+            speed_scale=speed_scale,
         )
 
 
 class MockSynthesisEngine(SynthesisEngineBase):
-    def __init__(self,
-                 speakers: str,
-                 supported_devices: Optional[str] = None):
+    def __init__(
+        self, use_gpu: bool, speakers: str, supported_devices: Optional[str] = None
+    ):
         self._speakers = speakers
         self._supported_devices = supported_devices
 
         self.default_sampling_rate = 44100
-        self.use_gpu = True
+        self.use_gpu = False
 
         metas = get_metas_dict()
-        self.previous_speaker_id = metas[0]['styles'][0]['id']
+        self.previous_speaker_id = metas[0]["styles"][0]["id"]
         self.previous_speed_scale = 1.0
 
-        self.current_speaker_models: EspnetModel = \
-            EspnetModel.get_character_model(use_gpu=self.use_gpu,
-                                            speaker_id=self.previous_speaker_id,
-                                            speed_scale=self.previous_speed_scale)
+        self.current_speaker_models: EspnetModel = EspnetModel.get_character_model(
+            use_gpu=self.use_gpu,
+            speaker_id=self.previous_speaker_id,
+            speed_scale=self.previous_speed_scale,
+        )
 
     @property
     def speakers(self) -> str:
@@ -117,27 +120,38 @@ class MockSynthesisEngine(SynthesisEngineBase):
         return self._supported_devices
 
     @staticmethod
-    def replace_phoneme_length(accent_phrases: List[AccentPhrase], speaker_id: int) -> List[AccentPhrase]:
+    def replace_phoneme_length(
+        accent_phrases: List[AccentPhrase], speaker_id: int
+    ) -> List[AccentPhrase]:
         return accent_phrases
 
     @staticmethod
-    def replace_mora_pitch(accent_phrases: List[AccentPhrase], speaker_id: int) -> List[AccentPhrase]:
+    def replace_mora_pitch(
+        accent_phrases: List[AccentPhrase], speaker_id: int
+    ) -> List[AccentPhrase]:
         return accent_phrases
 
-    def _synthesis_impl(self, query: AudioQuery, speaker_id: int, text: str) -> np.ndarray:
+    def _synthesis_impl(
+        self, query: AudioQuery, speaker_id: int, text: str
+    ) -> np.ndarray:
         start_time = time.time()
 
-        if self.previous_speaker_id != speaker_id or self.previous_speed_scale != query.speedScale:
+        if (
+            self.previous_speaker_id != speaker_id
+            or self.previous_speed_scale != query.speedScale
+        ):
             self.current_speaker_models = None
-            self.current_speaker_models = EspnetModel.get_character_model(use_gpu=self.use_gpu,
-                                                                          speaker_id=speaker_id,
-                                                                          speed_scale=1/query.speedScale)
+            self.current_speaker_models = EspnetModel.get_character_model(
+                use_gpu=self.use_gpu,
+                speaker_id=speaker_id,
+                speed_scale=1 / query.speedScale,
+            )
             self.previous_speaker_id = speaker_id
             self.previous_speed_scale = query.speedScale
 
         if self.current_speaker_models.g2p_type in [
             "pyopenjtalk_accent",
-            "pyopenjtalk_accent_with_pause"
+            "pyopenjtalk_accent_with_pause",
         ]:
             tokens = self.query2tokens_accent(
                 query,
@@ -157,22 +171,30 @@ class MockSynthesisEngine(SynthesisEngineBase):
 
         # pitch, intonation
         if query.pitchScale != 0 or query.intonationScale != 1:
-            f0, sp, ap = self.get_world(wave.astype(np.float64), query.outputSamplingRate)
+            f0, sp, ap = self.get_world(
+                wave.astype(np.float64), query.outputSamplingRate
+            )
             # pitch
             if query.pitchScale != 0:
-                f0 *= 2 ** query.pitchScale
+                f0 *= 2**query.pitchScale
             # intonation
             if query.intonationScale != 1:
                 m = f0.mean()
                 s = f0.std()
                 f0_tmp = (f0 - m) / s
                 f0 = (f0_tmp * (s * query.intonationScale)) + m
-            wave = self.get_wav_from_world(f0, sp, ap, query.outputSamplingRate).astype(np.float32)
+            wave = self.get_wav_from_world(f0, sp, ap, query.outputSamplingRate).astype(
+                np.float32
+            )
 
         # add sil
         if query.prePhonemeLength != 0 or query.postPhonemeLength != 0:
-            pre_pause = np.zeros(int(self.default_sampling_rate * query.prePhonemeLength))
-            post_pause = np.zeros(int(self.default_sampling_rate * query.postPhonemeLength))
+            pre_pause = np.zeros(
+                int(self.default_sampling_rate * query.prePhonemeLength)
+            )
+            post_pause = np.zeros(
+                int(self.default_sampling_rate * query.postPhonemeLength)
+            )
             wave = np.concatenate([pre_pause, wave, post_pause], 0)
 
         # resampling
@@ -184,7 +206,7 @@ class MockSynthesisEngine(SynthesisEngineBase):
                 filter="kaiser_fast",
             )
 
-        rtf = (time.time() - start_time)
+        rtf = time.time() - start_time
         print(f"Synthesis Time: {rtf}")
         return wave
 
@@ -197,52 +219,41 @@ class MockSynthesisEngine(SynthesisEngineBase):
             for i, mora in enumerate(accent_phrase.moras):
                 accent_calc_str = str((i + 1) - accent)
                 if mora.consonant is not None:
-                    tokens += [
-                        mora.consonant,
-                        accent_str,
-                        accent_calc_str
-                    ]
-                tokens += [
-                    mora.vowel,
-                    accent_str,
-                    accent_calc_str
-                ]
-            if (
-                accent_phrase.pause_mora is not None
-                and with_pause
-            ):
+                    tokens += [mora.consonant, accent_str, accent_calc_str]
+                tokens += [mora.vowel, accent_str, accent_calc_str]
+            if accent_phrase.pause_mora is not None and with_pause:
                 tokens += [accent_phrase.pause_mora.vowel]
         return tokens
 
     @staticmethod
     def query2tokens_prosody(query: AudioQuery, text: str):
-        tokens = ['^']
+        tokens = ["^"]
         for i, accent_phrase in enumerate(query.accent_phrases):
             up_token_flag = False
             for j, mora in enumerate(accent_phrase.moras):
                 if mora.consonant:
                     tokens.append(mora.consonant.lower())
-                if mora.vowel == 'N':
+                if mora.vowel == "N":
                     tokens.append(mora.vowel)
                 else:
                     tokens.append(mora.vowel.lower())
-                if accent_phrase.accent == j+1 and j+1 != len(accent_phrase.moras):
-                    tokens.append(']')
-                if accent_phrase.accent-1 >= j+1 and up_token_flag is False:
-                    tokens.append('[')
+                if accent_phrase.accent == j + 1 and j + 1 != len(accent_phrase.moras):
+                    tokens.append("]")
+                if accent_phrase.accent - 1 >= j + 1 and up_token_flag is False:
+                    tokens.append("[")
                     up_token_flag = True
-            if i+1 != len(query.accent_phrases):
+            if i + 1 != len(query.accent_phrases):
                 if accent_phrase.pause_mora:
-                    tokens.append('_')
+                    tokens.append("_")
                 else:
-                    tokens.append('#')
+                    tokens.append("#")
         try:
-            if query.accent_phrases[-1].is_interrogative or text[-1] in ['?', '？']:
-                tokens.append('?')
+            if query.accent_phrases[-1].is_interrogative or text[-1] in ["?", "？"]:
+                tokens.append("?")
             else:
-                tokens.append('$')
+                tokens.append("$")
         except IndexError:
-            tokens.append('$')
+            tokens.append("$")
         return tokens
 
     @staticmethod
