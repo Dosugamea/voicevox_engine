@@ -1,0 +1,44 @@
+FROM python:3.8.16-bullseye AS build
+
+WORKDIR /
+ADD ./requirements.txt /app/requirements.txt
+ADD ./requirements-coeiroink.txt /app/requirements-coeiroink.txt
+RUN apt update && apt upgrade -y
+RUN apt install build-essential cmake libsndfile1 -y
+WORKDIR /app
+RUN git clone https://github.com/espnet/espnet -b master
+RUN cd ./espnet/tools && ./setup_python.sh $(which python3) && make
+RUN pip install -r requirements.txt
+RUN pip install -r requirements-coeiroink.txt
+
+FROM python:3.8.16-slim-bullseye AS prod
+COPY --from=build /usr/local/lib/python3.8/site-packages /usr/local/lib/python3.8/site-packages
+COPY --from=build /app/espnet/tools/chainer /app/espnet/tools/chainer
+COPY --from=build /app/espnet/utils /app/espnet/utils
+COPY --from=build /app/espnet/espnet /app/espnet/espnet
+COPY --from=build /app/espnet/espnet2 /app/espnet/espnet2
+RUN apt update\
+    && apt install -y libsndfile1\
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/local/lib/python3.8/site-packages/
+RUN rm -r ./tensorboard_data_server &&\
+    rm -r ./tensorboard &&\
+    rm -r ./caffe2 &&\
+    rm -r ./matplotlib &&\
+    rm -r ./wandb &&\
+    rm -r ./youtube_dl &&\
+    rm -r ./pip &&\
+    rm -r ./grpc
+
+WORKDIR /
+COPY ./presets.yaml /app/presets.yaml
+COPY ./default.csv /app/default.csv
+COPY ./voicevox_engine /app/voicevox_engine
+COPY ./speaker_info /app/speaker_info
+COPY ./run.py /app/run.py
+
+WORKDIR /app
+EXPOSE 50031
+CMD ["python", "run.py"]
